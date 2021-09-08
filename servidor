@@ -29,20 +29,36 @@ def dados_recebidos(conexao, dados):
             conexao.enviar(b":server PONG server :" + data.split(b" ", 1)[1])
         elif b"NICK" in data and b"\r\n" in data:
             print("NICK esta em dados!")
-            nickname = data.split(b" ", 1)[1].split(b"\r\n")[0]
-            if not validar_nome(nickname):
-                # :server 432 * %s :Erroneous nickname\r\n
-                print(b":server 432 * %s :Erroneous nickname" % nickname)
-                conexao.enviar(b":server 432 * %s :Erroneous nickname\r\n" % nickname)
-            else:
-                if nickname.lower() in _NICKNAME_DICT.keys():
-                    print("nickname: %s já existe" % nickname)
-                    conexao.enviar(b":server 433 * %s :Nickname is already in use\r\n" % nickname)
+            next_nick = data.split(b" ", 1)[1].split(b"\r\n")[0]
+
+            current_nick = b'*'
+            for (key, value) in _NICKNAME_DICT.items():
+                if value == conexao:
+                    current_nick = key
+
+            if validar_nome(next_nick):
+                lowercase_nicks_list = []
+                for key in _NICKNAME_DICT.keys():
+                    lowercase_nicks_list.append(key.lower())
+
+                if next_nick.lower() in lowercase_nicks_list:
+                    print("nickname: %s já existe" % next_nick)
+                    conexao.enviar(b":server 433 %s %s :Nickname is already in use\r\n" % (current_nick, next_nick))
+                elif current_nick == b'*':
+                    print("nickname: %s colocado no dicionario" % next_nick)
+                    _NICKNAME_DICT[next_nick] = conexao
+                    conexao.enviar(b":server 001 %s :Welcome\r\n" % next_nick)
+                    conexao.enviar(b":server 422 %s :MOTD File is missing\r\n" % next_nick)
                 else:
-                    print("nickname: %s colocado no dicionario" % nickname)
-                    _NICKNAME_DICT[nickname.lower()] = nickname
-                    conexao.enviar(b":server 001 %s :Welcome\r\n" % nickname)
-                    conexao.enviar(b":server 422 %s :MOTD File is missing\r\n" % nickname)
+                    print("nickname: %s colocado no dicionario" % next_nick)
+                    _NICKNAME_DICT[next_nick] = conexao
+                    del _NICKNAME_DICT[current_nick]
+                    conexao.enviar(b":%s NICK %s\r\n" % (current_nick, next_nick))
+                    
+            else:
+                # :server 432 * %s :Erroneous nickname\r\n
+                print(b":server 432 %s %s :Erroneous nickname" % (current_nick, next_nick))
+                conexao.enviar(b":server 432 %s %s :Erroneous nickname\r\n" % (current_nick, next_nick))
 
         elif b"\r\n" not in data:
             print("elif")
