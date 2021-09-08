@@ -1,26 +1,93 @@
 #!/usr/bin/env python3
 import asyncio
-from tcp import Servidor
+from grader.tcp import Servidor
 import re
+
+_REMAINED_DATA_LIST_BUFFER = []
+_NICKNAME_DICT = {}
 
 
 def validar_nome(nome):
-    return re.match(br'^[a-zA-Z][a-zA-Z0-9_-]*$', nome) is not None
+    return re.match(br"^[a-zA-Z][a-zA-Z0-9_-]*$", nome) is not None
 
 
 def sair(conexao):
-    print(conexao, 'conexão fechada')
+    print(conexao, "conexão fechada")
     conexao.fechar()
 
 
 def dados_recebidos(conexao, dados):
-    if dados == b'':
+    if dados == b"":
         return sair(conexao)
-    print(conexao, dados)
+
+    data_splited_list = dados.splitlines(True)
+    print("data: ", dados)
+    print("data_splited: ", data_splited_list)
+    for data in data_splited_list:
+        if b"PING" in data and b"\r\n" in data:
+            print("PING esta em dados!")
+            conexao.enviar(b":server PONG server :" + data.split(b" ", 1)[1])
+        elif b"NICK" in data and b"\r\n" in data:
+            print("NICK esta em dados!")
+            nickname = data.split(b" ", 1)[1].split(b"\r\n")[0]
+            if not validar_nome(nickname):
+                # :server 432 * %s :Erroneous nickname\r\n
+                print(b":server 432 * %s :Erroneous nickname" % nickname)
+                conexao.enviar(b":server 432 * %s :Erroneous nickname\r\n" % nickname)
+            else:
+                if nickname.lower() in _NICKNAME_DICT.keys():
+                    print("nickname: %s já existe" % nickname)
+                    conexao.enviar(b":server 433 * %s :Nickname is already in use\r\n" % nickname)
+                else:
+                    print("nickname: %s colocado no dicionario" % nickname)
+                    _NICKNAME_DICT[nickname.lower()] = nickname
+                    conexao.enviar(b":server 001 %s :Welcome\r\n" % nickname)
+                    conexao.enviar(b":server 422 %s :MOTD File is missing\r\n" % nickname)
+
+        elif b"\r\n" not in data:
+            print("elif")
+            _REMAINED_DATA_LIST_BUFFER.append(data)
+
+    buffer = b"".join(_REMAINED_DATA_LIST_BUFFER)
+    print("variavel buffer: ", buffer)
+    if b"PING" in buffer and b"\r\n" in buffer:
+        print("BUFFER")
+        conexao.enviar(b":server PONG server :" + buffer.split(b" ", 1)[1])
+        _REMAINED_DATA_LIST_BUFFER.clear()
+    # print(r'%s' %dados)
+    # ic(r"{}".format(dados))
+    # ic(r"{}".format(data_splited_list))
+    # data_aux = b""
+    # for data in data_splited_list:
+    #     print("data: ", data)
+    #     if b"\r\n" not in data:
+    #         print(r"INFO>>| \r\n nao esta em data")
+    #         _REMAINED_DATA_LIST_BUFFER.append(data_aux)
+    #         data_aux = rb"".join(_REMAINED_DATA_LIST_BUFFER)
+    #     elif b"\r\n" in data_aux:
+    #         print(data_aux)
+    #     else:
+    #         print(r"INFO>>| \r\n esta em data")
+    #         if len(_REMAINED_DATA_LIST_BUFFER) == 0:
+    #             print(data)
+    #         else:
+    #             print(data_aux)
+
+    #         _REMAINED_DATA_LIST_BUFFER.clear()
+
+    # if b"PRIVMSG" in dados:
+    #     receiver_bytes = dados.split(b" ")[1]
+    #     content_bytes = dados.split(b":")[1]
+
+    #     conexao.enviar(b":remetente PRIVMSG " + receiver_bytes + b" :" + content_bytes)
+    # ic(receiver)
+    # ic(content)
+
+    # print(conexao, dados)
 
 
 def conexao_aceita(conexao):
-    print(conexao, 'nova conexão')
+    print(conexao, "nova conexão")
     conexao.registrar_recebedor(dados_recebidos)
 
 
