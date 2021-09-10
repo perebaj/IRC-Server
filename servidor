@@ -5,6 +5,7 @@ import re
 
 _REMAINED_DATA_LIST_BUFFER = []
 _NICKNAME_DICT = {}
+_CHANNEL_DICT = {}
 
 
 def validar_nome(nome):
@@ -27,6 +28,12 @@ def conexao_do_nick(nick):
     for (key, value) in _NICKNAME_DICT.items():
         if nick.lower() == key.lower():
             return value
+    return None
+
+def lista_membros_canal(nome_canal):
+    for (nome, membros) in _CHANNEL_DICT.items():
+        if nome_canal.lower() == nome.lower():
+            return membros
     return None
 
 def dados_recebidos(conexao, dados):
@@ -71,14 +78,33 @@ def dados_recebidos(conexao, dados):
         elif b"PRIVMSG" in data and b"\r\n" in data:
             nick_emissor = nick_da_conexao(conexao)
             nick_receptor = data.split(b' ')[1]
+
             conexao_receptor = conexao_do_nick(nick_receptor)
+            canal_receptor = lista_membros_canal(nick_receptor)
+
+            mensagem = data.split(b':')[1]
+            mensagem = mensagem[:-2]
 
             if conexao_receptor:
-                mensagem = data.split(b':')[1]
-                mensagem = mensagem[:-2]
-
-                print(b'\n%s enviando %s pra %s' % (nick_emissor, mensagem, nick_receptor))
+                print(b'%s enviando %s para %s' % (nick_emissor, mensagem, nick_receptor))
                 conexao_receptor.enviar(b":%s PRIVMSG %s :%s\r\n" % (nick_emissor, nick_receptor, mensagem))
+            elif canal_receptor:
+                print(b'%s enviando %s para o canal %s' % (nick_emissor, mensagem, nick_receptor))
+                for membro in canal_receptor:
+                    if membro != conexao:
+                        membro.enviar(b":%s PRIVMSG %s :%s\r\n" % (nick_emissor, nick_receptor, mensagem))
+
+        elif b"JOIN" in data and b"\r\n" in data:
+            nick_join = nick_da_conexao(conexao)
+            nome_canal = data.split(b' ')[1][:-2]
+            membros = lista_membros_canal(nome_canal)
+            if not membros:
+                _CHANNEL_DICT[nome_canal] = []
+                membros = _CHANNEL_DICT[nome_canal]
+
+            membros.append(conexao)
+            print(b'%s entrando no canal %s' % (nick_join, nome_canal))
+            conexao.enviar(b":%s JOIN :%s\r\n" % (nick_join, nome_canal))
 
         elif b"\r\n" not in data:
             print("elif")
