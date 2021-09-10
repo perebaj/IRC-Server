@@ -98,14 +98,29 @@ def dados_recebidos(conexao, dados):
             nick_join = nick_da_conexao(conexao)
             nome_canal = data.split(b' ')[1][:-2]
             membros = lista_membros_canal(nome_canal)
+
+            # se o canal for novo
             if not membros:
                 _CHANNEL_DICT[nome_canal] = []
                 membros = _CHANNEL_DICT[nome_canal]
 
-            membros.append(conexao)
+            # se o usuario ainda nao estiver no canal
+            if conexao not in membros:
+                membros.append(conexao)
+            
             print(b'%s entrando no canal %s' % (nick_join, nome_canal))
             conexao.enviar(b":%s JOIN :%s\r\n" % (nick_join, nome_canal))
 
+        elif b"PART" in data and b"\r\n" in data:
+            nick_part = nick_da_conexao(conexao)
+            nome_canal = data.split(b' ')[1].split(b'\r\n')[0]
+            membros = lista_membros_canal(nome_canal)
+            if conexao in membros:
+                print(b'%s saindo do canal %s' % (nick_part, nome_canal))
+                for conexao_membro in membros:
+                    conexao_membro.enviar(b':%s PART %s\r\n' % (nick_part, nome_canal))
+                membros.remove(conexao)
+            
         elif b"\r\n" not in data:
             print("elif")
             _REMAINED_DATA_LIST_BUFFER.append(data)
