@@ -15,6 +15,19 @@ def sair(conexao):
     print(conexao, "conexão fechada")
     conexao.fechar()
 
+def nick_da_conexao(conexao):
+    nick = b'*'
+    for (key, value) in _NICKNAME_DICT.items():
+        if value == conexao:
+            nick = key
+    
+    return nick
+
+def conexao_do_nick(nick):
+    for (key, value) in _NICKNAME_DICT.items():
+        if nick.lower() == key.lower():
+            return value
+    return None
 
 def dados_recebidos(conexao, dados):
     if dados == b"":
@@ -30,11 +43,7 @@ def dados_recebidos(conexao, dados):
         elif b"NICK" in data and b"\r\n" in data:
             print("NICK esta em dados!")
             next_nick = data.split(b" ", 1)[1].split(b"\r\n")[0]
-
-            current_nick = b'*'
-            for (key, value) in _NICKNAME_DICT.items():
-                if value == conexao:
-                    current_nick = key
+            current_nick = nick_da_conexao(conexao)
 
             if validar_nome(next_nick):
                 lowercase_nicks_list = []
@@ -53,12 +62,23 @@ def dados_recebidos(conexao, dados):
                     print("nickname: %s colocado no dicionario" % next_nick)
                     _NICKNAME_DICT[next_nick] = conexao
                     del _NICKNAME_DICT[current_nick]
-                    conexao.enviar(b":%s NICK %s\r\n" % (current_nick, next_nick))
-                    
+                    conexao.enviar(b":%s NICK %s\r\n" % (current_nick, next_nick))  
             else:
                 # :server 432 * %s :Erroneous nickname\r\n
                 print(b":server 432 %s %s :Erroneous nickname" % (current_nick, next_nick))
                 conexao.enviar(b":server 432 %s %s :Erroneous nickname\r\n" % (current_nick, next_nick))
+
+        elif b"PRIVMSG" in data and b"\r\n" in data:
+            nick_emissor = nick_da_conexao(conexao)
+            nick_receptor = data.split(b' ')[1]
+            conexao_receptor = conexao_do_nick(nick_receptor)
+
+            if conexao_receptor:
+                mensagem = data.split(b':')[1]
+                mensagem = mensagem[:-2]
+
+                print(b'\n%s enviando %s pra %s' % (nick_emissor, mensagem, nick_receptor))
+                conexao_receptor.enviar(b":%s PRIVMSG %s :%s\r\n" % (nick_emissor, nick_receptor, mensagem))
 
         elif b"\r\n" not in data:
             print("elif")
