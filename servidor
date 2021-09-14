@@ -6,6 +6,7 @@ import re
 _REMAINED_DATA_LIST_BUFFER = []
 _NICKNAME_DICT = {}
 _CHANNEL_DICT = {}
+_PEOPLE2CHANNEL_DICT = {}
 
 
 def validar_nome(nome):
@@ -14,15 +15,32 @@ def validar_nome(nome):
 
 def sair(conexao):
     print(conexao, "conexão fechada")
+    nickname = nick_da_conexao(conexao)
+    channel_list = _PEOPLE2CHANNEL_DICT.get(nickname, "")
+    if channel_list:
+        _PEOPLE2CHANNEL_DICT.pop(nickname)
+        print("channel_list: ", channel_list)
+        _NICKNAME_DICT.pop(nickname)
+        for channel in channel_list:
+            _CHANNEL_DICT[channel].remove(conexao)
+            for members in _CHANNEL_DICT[channel]:
+                print("NICK DA CONECXÃO:", nick_da_conexao(members))
+                print(b":%s QUIT" % nickname)
+                members.enviar(b":%s QUIT\r\n" % nickname)
+
+    print("_CHANNEL_DICT>", _CHANNEL_DICT)
+    print("_PEOPLE2DICT>", _PEOPLE2CHANNEL_DICT)
     conexao.fechar()
 
+
 def nick_da_conexao(conexao):
-    nick = b'*'
+    nick = b"*"
     for (key, value) in _NICKNAME_DICT.items():
         if value == conexao:
             nick = key
-    
+
     return nick
+
 
 def conexao_do_nick(nick):
     for (key, value) in _NICKNAME_DICT.items():
@@ -30,14 +48,17 @@ def conexao_do_nick(nick):
             return value
     return None
 
+
 def lista_membros_canal(nome_canal):
     for (nome, membros) in _CHANNEL_DICT.items():
         if nome_canal.lower() == nome.lower():
             return membros
     return None
 
+
 def dados_recebidos(conexao, dados):
     if dados == b"":
+
         return sair(conexao)
 
     data_splited_list = dados.splitlines(True)
@@ -59,8 +80,11 @@ def dados_recebidos(conexao, dados):
 
                 if next_nick.lower() in lowercase_nicks_list:
                     print("nickname: %s já existe" % next_nick)
-                    conexao.enviar(b":server 433 %s %s :Nickname is already in use\r\n" % (current_nick, next_nick))
-                elif current_nick == b'*':
+                    conexao.enviar(
+                        b":server 433 %s %s :Nickname is already in use\r\n"
+                        % (current_nick, next_nick)
+                    )
+                elif current_nick == b"*":
                     print("nickname: %s colocado no dicionario" % next_nick)
                     _NICKNAME_DICT[next_nick] = conexao
                     conexao.enviar(b":server 001 %s :Welcome\r\n" % next_nick)
@@ -69,98 +93,85 @@ def dados_recebidos(conexao, dados):
                     print("nickname: %s colocado no dicionario" % next_nick)
                     _NICKNAME_DICT[next_nick] = conexao
                     del _NICKNAME_DICT[current_nick]
-                    conexao.enviar(b":%s NICK %s\r\n" % (current_nick, next_nick))  
+                    conexao.enviar(b":%s NICK %s\r\n" % (current_nick, next_nick))
             else:
                 # :server 432 * %s :Erroneous nickname\r\n
                 print(b":server 432 %s %s :Erroneous nickname" % (current_nick, next_nick))
-                conexao.enviar(b":server 432 %s %s :Erroneous nickname\r\n" % (current_nick, next_nick))
+                conexao.enviar(
+                    b":server 432 %s %s :Erroneous nickname\r\n" % (current_nick, next_nick)
+                )
 
         elif b"PRIVMSG" in data and b"\r\n" in data:
             nick_emissor = nick_da_conexao(conexao)
-            nick_receptor = data.split(b' ')[1]
+            nick_receptor = data.split(b" ")[1]
 
             conexao_receptor = conexao_do_nick(nick_receptor)
             canal_receptor = lista_membros_canal(nick_receptor)
 
-            mensagem = data.split(b':')[1]
+            mensagem = data.split(b":")[1]
             mensagem = mensagem[:-2]
 
             if conexao_receptor:
-                print(b'%s enviando %s para %s' % (nick_emissor, mensagem, nick_receptor))
-                conexao_receptor.enviar(b":%s PRIVMSG %s :%s\r\n" % (nick_emissor, nick_receptor, mensagem))
+                print(b"%s enviando %s para %s" % (nick_emissor, mensagem, nick_receptor))
+                conexao_receptor.enviar(
+                    b":%s PRIVMSG %s :%s\r\n" % (nick_emissor, nick_receptor, mensagem)
+                )
             elif canal_receptor:
-                print(b'%s enviando %s para o canal %s' % (nick_emissor, mensagem, nick_receptor))
+                print(b"%s enviando %s para o canal %s" % (nick_emissor, mensagem, nick_receptor))
                 for membro in canal_receptor:
                     if membro != conexao:
-                        membro.enviar(b":%s PRIVMSG %s :%s\r\n" % (nick_emissor, nick_receptor, mensagem))
+                        membro.enviar(
+                            b":%s PRIVMSG %s :%s\r\n" % (nick_emissor, nick_receptor, mensagem)
+                        )
 
         elif b"JOIN" in data and b"\r\n" in data:
             nick_join = nick_da_conexao(conexao)
-            nome_canal = data.split(b' ')[1][:-2]
+            nome_canal = data.split(b" ")[1][:-2]
             membros = lista_membros_canal(nome_canal)
 
+            # _PEOPLE2CHANNEL_DICT[nick_join] =
             # se o canal for novo
             if not membros:
                 _CHANNEL_DICT[nome_canal] = []
                 membros = _CHANNEL_DICT[nome_canal]
 
+            if nick_join not in _PEOPLE2CHANNEL_DICT.keys():
+                _PEOPLE2CHANNEL_DICT[nick_join] = []
+                print("nick %s in _PEOPLE2CHANNEL_DICT" % nick_join)
+
+            _PEOPLE2CHANNEL_DICT[nick_join].append(nome_canal)
+            print(_PEOPLE2CHANNEL_DICT)
+
             # se o usuario ainda nao estiver no canal
             if conexao not in membros:
                 membros.append(conexao)
-            
-            print(b'%s entrando no canal %s' % (nick_join, nome_canal))
+
+            print(b"%s entrando no canal %s" % (nick_join, nome_canal))
             conexao.enviar(b":%s JOIN :%s\r\n" % (nick_join, nome_canal))
 
         elif b"PART" in data and b"\r\n" in data:
             nick_part = nick_da_conexao(conexao)
-            nome_canal = data.split(b' ')[1].split(b'\r\n')[0]
+            nome_canal = data.split(b" ")[1].split(b"\r\n")[0]
             membros = lista_membros_canal(nome_canal)
             if conexao in membros:
-                print(b'%s saindo do canal %s' % (nick_part, nome_canal))
+                print(b"%s saindo do canal %s" % (nick_part, nome_canal))
                 for conexao_membro in membros:
-                    conexao_membro.enviar(b':%s PART %s\r\n' % (nick_part, nome_canal))
+                    conexao_membro.enviar(b":%s PART %s\r\n" % (nick_part, nome_canal))
                 membros.remove(conexao)
-            
+
+        # elif b"QUIT" in data and b"\r\n" in data:
+        #     nickname = data.split(b" ")[1]
+        #     print("QUIT NICKNAME:", nickname)
+
         elif b"\r\n" not in data:
             print("elif")
             _REMAINED_DATA_LIST_BUFFER.append(data)
 
     buffer = b"".join(_REMAINED_DATA_LIST_BUFFER)
-    print("variavel buffer: ", buffer)
     if b"PING" in buffer and b"\r\n" in buffer:
         print("BUFFER")
         conexao.enviar(b":server PONG server :" + buffer.split(b" ", 1)[1])
         _REMAINED_DATA_LIST_BUFFER.clear()
-    # print(r'%s' %dados)
-    # ic(r"{}".format(dados))
-    # ic(r"{}".format(data_splited_list))
-    # data_aux = b""
-    # for data in data_splited_list:
-    #     print("data: ", data)
-    #     if b"\r\n" not in data:
-    #         print(r"INFO>>| \r\n nao esta em data")
-    #         _REMAINED_DATA_LIST_BUFFER.append(data_aux)
-    #         data_aux = rb"".join(_REMAINED_DATA_LIST_BUFFER)
-    #     elif b"\r\n" in data_aux:
-    #         print(data_aux)
-    #     else:
-    #         print(r"INFO>>| \r\n esta em data")
-    #         if len(_REMAINED_DATA_LIST_BUFFER) == 0:
-    #             print(data)
-    #         else:
-    #             print(data_aux)
-
-    #         _REMAINED_DATA_LIST_BUFFER.clear()
-
-    # if b"PRIVMSG" in dados:
-    #     receiver_bytes = dados.split(b" ")[1]
-    #     content_bytes = dados.split(b":")[1]
-
-    #     conexao.enviar(b":remetente PRIVMSG " + receiver_bytes + b" :" + content_bytes)
-    # ic(receiver)
-    # ic(content)
-
-    # print(conexao, dados)
 
 
 def conexao_aceita(conexao):
