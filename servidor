@@ -147,7 +147,16 @@ def dados_recebidos(conexao, dados):
                 membros.append(conexao)
 
             print(b"%s entrando no canal %s" % (nick_join, nome_canal))
-            conexao.enviar(b":%s JOIN :%s\r\n" % (nick_join, nome_canal))
+
+            nomes_membros = []
+            for membro in membros:
+                nomes_membros.append(nick_da_conexao(membro))
+                membro.enviar(b":%s JOIN :%s\r\n" % (nick_join, nome_canal))
+
+            string_membros = b' '.join(sorted(nomes_membros))
+            print(b"String membros: %s" % string_membros)
+            conexao.enviar(b":server 353 %s = %s :%s\r\n" % (nick_join, nome_canal, string_membros))
+            conexao.enviar(b":server 366 %s %s :End of /NAMES list.\r\n" % (nick_join, nome_canal))
 
         elif b"PART" in data and b"\r\n" in data:
             nick_part = nick_da_conexao(conexao)
